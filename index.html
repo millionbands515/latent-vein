@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>latent-vein</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #cfe; font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #hud {
+    position: fixed; left: 16px; bottom: 16px; z-index: 2;
+    color: rgba(210,240,255,.75); pointer-events: none;
+    text-shadow: 0 1px 8px #000;
+  }
+  #hud b { color: #fff; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <b id="modeLabel">LATENS</b> — 1 icy · 2 latens · space pause<br/>
+  Yohei Nishitsuji heightfield (MIT) · LATENS palette remix
+</div>
+<script>
+const canvas = document.getElementById("c");
+const gl = canvas.getContext("webgl", { antialias: false, alpha: false, preserveDrawingBuffer: true });
+if (!gl) throw new Error("WebGL unavailable");
+
+const vertSrc = `
+attribute vec2 a;
+void main(){ gl_Position = vec4(a,0.0,1.0); }
+`;
+
+const fragSrc = `
+precision highp float;
+uniform vec2 r;
+uniform float t;
+uniform float uMode;
+uniform vec2 uLook;
+
+void main() {
+  vec2 FC = gl_FragCoord.xy;
+  vec4 o = vec4(0.0);
+  vec3 rd = normalize(vec3(FC - 0.5 * r, r.y * 0.5));
+  rd.xy += uLook * 0.25;
+  rd = normalize(rd);
+
+  for (float z = 0.0, d = 0.0, i = 0.0; i++ < 1e2; z += d) {
+    vec3 p = z * rd;
+    p.z += t;
+
+    if (uMode > 0.5) {
+      vec2 w = vec2(
+        sin(p.z * 0.23 + t * 0.17) + sin(p.x * 0.31),
+        cos(p.x * 0.19) + sin(p.z * 0.27 + t * 0.11)
+      );
+      p.xz += w * 0.62;
+    }
+
+    float h = 0.8;
+    for (float f = 1.0472; f < 2e2; f += f) {
+      h += abs(dot(sin(p.xz * f * 0.4 + t * f + cos(p.zx * f * 0.6)), vec2(0.4))) / f;
+    }
+
+    float surf = p.y - h * 2.0 + p.x * 0.7;
+    if (uMode > 0.5) {
+      float fleck = 0.18 * abs(sin(p.x * 1.7 + p.z * 1.3 + h * 4.0));
+      surf = min(surf, p.y - 1.55 - fleck * h);
+    }
+    d = 0.01 + abs(surf) * 0.2;
+
+    vec3 col;
+    if (uMode < 0.5) {
+      col = vec3(0.05, 0.10, 0.15) + h * vec3(0.10);
+    } else {
+      float hue = h * 1.15 + p.x * 0.08 + 0.15 * sin(p.z * 0.35);
+      vec3 irid = 0.5 + 0.5 * cos(6.28318 * (hue + vec3(0.00, 0.33, 0.67)));
+      vec3 deep = vec3(0.12, 0.03, 0.22);
+      vec3 cyan = vec3(0.05, 0.55, 0.72);
+      vec3 mag  = vec3(0.95, 0.18, 0.55);
+      vec3 gold = vec3(1.00, 0.52, 0.16);
+      vec3 pal = mix(deep, cyan, smoothstep(0.55, 1.15, h));
+      pal = mix(pal, mag, 0.35 + 0.35 * sin(h * 3.2 + p.z * 0.22));
+      pal = mix(pal, gold, smoothstep(1.15, 1.85, h));
+      col = pal * (0.35 + 0.85 * irid) + vec3(0.03, 0.07, 0.10);
+      col += gold * 0.18 * smoothstep(0.04, 0.0, abs(surf));
+    }
+    o.rgb += col / d * 2e-3;
+  }
+
+  o = tanh(o * o);
+  gl_FragColor = vec4(o.rgb, 1.0);
+}
+`;
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    throw new Error(gl.getShaderInfoLog(s));
+  }
+  return s;
+}
+
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, vertSrc));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fragSrc));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog, "a");
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+const uR = gl.getUniformLocation(prog, "r");
+const uT = gl.getUniformLocation(prog, "t");
+const uMode = gl.getUniformLocation(prog, "uMode");
+const uLook = gl.getUniformLocation(prog, "uLook");
+
+let mode = 1.0;
+let paused = false;
+let t0 = performance.now();
+let tAcc = 0;
+let look = [0, 0];
+let drag = false, lx = 0, ly = 0;
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.floor(innerWidth * dpr);
+  const h = Math.floor(innerHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "1") { mode = 0; document.getElementById("modeLabel").textContent = "ICY"; }
+  if (e.key === "2") { mode = 1; document.getElementById("modeLabel").textContent = "LATENS"; }
+  if (e.code === "Space") { e.preventDefault(); paused = !paused; }
+});
+
+canvas.addEventListener("pointerdown", (e) => { drag = true; lx = e.clientX; ly = e.clientY; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener("pointerup", () => { drag = false; });
+canvas.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  look[0] += (e.clientX - lx) / innerWidth;
+  look[1] -= (e.clientY - ly) / innerHeight;
+  lx = e.clientX; ly = e.clientY;
+});
+
+function frame(now) {
+  resize();
+  if (!paused) tAcc += (now - t0) * 0.001;
+  t0 = now;
+  gl.uniform2f(uR, canvas.width, canvas.height);
+  gl.uniform1f(uT, tAcc);
+  gl.uniform1f(uMode, mode);
+  gl.uniform2f(uLook, look[0], look[1]);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
