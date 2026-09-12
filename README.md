@@ -1,21 +1,24 @@
 # latent-vein
 
-Single-file WebGL raymarcher.
+Music visualizer. WebGL2 heightfield raymarcher that listens.
 
-- **Icy** — faithful port of [Yohei Nishitsuji](https://x.com/YoheiNishitsuji/status/2098403689421570237)'s `#つぶやきGLSL` heightfield (MIT).
-- **Latens** — same marcher remixed toward the iridescent void-terrain look from [Cristian Peñas / LATENS](https://x.com/ilumine_ai/status/2098342499865821654), as quoted by [XorDev](https://x.com/XorDev/status/2098415010347188489).
+- **Icy** — [Yohei Nishitsuji](https://x.com/YoheiNishitsuji/status/2098403689421570237) `#つぶやきGLSL` marcher (MIT).
+- **Latens** — same marcher remixed toward [LATENS](https://x.com/ilumine_ai/status/2098342499865821654) iridescent void-terrain.
 
-Not LATENS itself. Visual inspiration only. Yohei's original compact source is MIT-licensed as stated on his profile.
+Drop a track, pick a file, or use the mic. Bass lifts the ridges, mids warp and shift hue, highs spark flecks, amplitude drives glow and fly speed.
 
 ## Run
 
-Open `index.html` in a browser (Chrome / Firefox / Safari). No build step.
+Open `index.html` in Chrome / Firefox / Safari. No build step.
 
-| Key | Action |
+Mic needs a secure context (`localhost` or https). File drop works from `file://`.
+
+| Input | Action |
 | --- | --- |
-| `1` | Icy mode |
-| `2` | Latens mode |
-| Space | Pause |
-| Click-drag | Nudge look |
+| Drop / **Load** | Play an audio file |
+| **Mic** | Live input |
+| `1` / `2` | Icy / Latens |
+| Space | Pause the camera (audio keeps driving) |
+| Drag | Look |
 
-Live original: [twigl.app](https://twigl.app?ol=true&ss=-P1HVl_PBZGXdqLm5Fxy)
+Not LATENS itself. Visual inspiration only. Yohei's compact source is MIT-licensed as stated on his profile.
